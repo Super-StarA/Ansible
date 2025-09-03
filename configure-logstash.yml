@@ -1,0 +1,56 @@
+- hosts: logstash
+  become: yes
+  vars:
+    elasticsearch_host: "{{ elasticsearch_host }}"   # injected by SSM ExtraVariables
+  tasks:
+    - name: Install Java 17
+      ansible.builtin.yum:
+        name: java-17-amazon-corretto-headless
+        state: present
+
+    - name: Add Elastic Yum repository
+      ansible.builtin.copy:
+        dest: /etc/yum.repos.d/elastic.repo
+        content: |
+          [elastic-8.x]
+          name=Elastic repository for 8.x packages
+          baseurl=https://artifacts.elastic.co/packages/8.x/yum
+          gpgcheck=1
+          gpgkey=https://artifacts.elastic.co/GPG-KEY-elasticsearch
+          enabled=1
+          autorefresh=1
+          type=rpm-md
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Make sure yum cache is up to date
+      ansible.builtin.command: yum makecache
+      args:
+        warn: false
+
+    - name: Install Logstash from Elastic repo
+      ansible.builtin.yum:
+        name: logstash
+        state: latest
+
+    - name: Deploy Logstash configuration file from template
+      ansible.builtin.template:
+        src: templates/logstash.conf.j2
+        dest: /etc/logstash/conf.d/01-main.conf
+        owner: logstash
+        group: logstash
+        mode: '0644'
+      notify: Restart Logstash
+
+    - name: Ensure Logstash service is enabled and running
+      ansible.builtin.service:
+        name: logstash
+        state: started
+        enabled: yes
+
+  handlers:
+    - name: Restart Logstash
+      ansible.builtin.service:
+        name: logstash
+        state: restarted
